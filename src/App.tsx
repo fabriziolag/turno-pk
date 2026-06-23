@@ -1,6 +1,11 @@
-import { useState } from 'react'
-
-type ViewId = 'hoy' | 'ruta' | 'turnos' | 'familias' | 'ajustes'
+import { Toast } from './components/Toast'
+import { useView, type ViewId } from './store/view'
+import { useStore } from './store/store'
+import { HoyView } from './features/hoy/HoyView'
+import { RutaView } from './features/ruta/RutaView'
+import { TurnosView } from './features/turnos/TurnosView'
+import { FamiliasView } from './features/familias/FamiliasView'
+import { AjustesView } from './features/ajustes/AjustesView'
 
 const TABS: { id: ViewId; label: string; icon: string }[] = [
   { id: 'hoy', label: 'Hoy', icon: '☀️' },
@@ -17,7 +22,9 @@ function todayPill() {
 }
 
 export default function App() {
-  const [view, setView] = useState<ViewId>('hoy')
+  const view = useView((s) => s.view)
+  const setView = useView((s) => s.setView)
+  const famCount = useStore((s) => s.db.families.length)
 
   return (
     <div className="mx-auto max-w-[1180px] pb-24">
@@ -30,7 +37,7 @@ export default function App() {
           <div className="min-w-0">
             <h1 className="font-display text-lg font-semibold leading-none">Turno PK</h1>
             <div className="mt-1 text-[11.5px] font-light text-emerald-200/80">
-              Furgón compartido
+              Furgón compartido · {famCount} familia{famCount === 1 ? '' : 's'}
             </div>
           </div>
         </div>
@@ -46,9 +53,7 @@ export default function App() {
             key={t.id}
             onClick={() => setView(t.id)}
             className={`flex flex-none items-center gap-1.5 whitespace-nowrap rounded-t-xl px-4 py-2.5 text-sm font-semibold transition ${
-              view === t.id
-                ? 'bg-panel text-ink'
-                : 'text-emerald-200/70 hover:text-emerald-100'
+              view === t.id ? 'bg-panel text-ink' : 'text-emerald-200/70 hover:text-emerald-100'
             }`}
           >
             <span>{t.icon}</span>
@@ -59,32 +64,14 @@ export default function App() {
 
       {/* Surface */}
       <main className="mx-3 min-h-[60vh] rounded-b-[18px] bg-panel px-5 pb-8 pt-6 shadow-2xl shadow-black/20">
-        <Placeholder view={view} />
+        {view === 'hoy' && <HoyView />}
+        {view === 'ruta' && <RutaView />}
+        {view === 'turnos' && <TurnosView />}
+        {view === 'familias' && <FamiliasView />}
+        {view === 'ajustes' && <AjustesView />}
       </main>
-    </div>
-  )
-}
 
-function Placeholder({ view }: { view: ViewId }) {
-  const copy: Record<ViewId, { title: string; note: string }> = {
-    hoy: { title: 'Confirmación del día', note: 'Quién va, quién retira, plan por WhatsApp.' },
-    ruta: { title: 'Ruta de entrega', note: 'Orden óptimo, mapa y avisos de entrega.' },
-    turnos: { title: 'Planificación de turnos', note: 'Grilla semanal y contador anual.' },
-    familias: { title: 'Familias del turno', note: 'Niños, papás, direcciones y contactos.' },
-    ajustes: { title: 'Ajustes', note: 'Colegio, horarios de salida y respaldo.' },
-  }
-  const c = copy[view]
-  return (
-    <section>
-      <h2 className="font-display text-2xl font-semibold text-ink">{c.title}</h2>
-      <p className="mt-1 text-sm text-ink-soft">{c.note}</p>
-      <div className="mt-10 rounded-2xl border border-dashed border-line bg-panel2 px-6 py-16 text-center">
-        <div className="text-5xl opacity-50">🚧</div>
-        <p className="mt-3 font-display text-lg text-ink">En construcción</p>
-        <p className="mt-1 text-sm text-ink-soft">
-          Portando esta pestaña desde tu demo. Ya viene.
-        </p>
-      </div>
-    </section>
+      <Toast />
+    </div>
   )
 }
