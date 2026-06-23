@@ -1,0 +1,47 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600;700&display=swap');
+@import 'tailwindcss';
+
+/* ---- Paleta de Turno PK (espejo del demo) ---- */
+@theme {
+  --color-bg: #0f2a1d;
+  --color-panel: #fbfaf4;
+  --color-panel2: #f3f0e4;
+  --color-ink: #15281c;
+  --color-ink-soft: #4a5d50;
+  --color-line: #e2ddc9;
+  --color-gold: #c9a84a;
+  --color-gold-deep: #a8862f;
+  --color-leaf: #2f6d4a;
+  --color-leaf-bright: #3a8a5c;
+  --color-clay: #c2693f;
+  --color-sky: #5b8bb0;
+  --color-rose: #b8607a;
+  --color-plum: #8a6aa3;
+
+  --font-display: 'Fraunces', serif;
+  --font-sans: 'Outfit', system-ui, sans-serif;
+
+  --radius-card: 18px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+  background:
+    radial-gradient(1200px 600px at 80% -10%, #1d4a32 0%, transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, #1a3f2b 0%, transparent 55%),
+    var(--color-bg);
+  overflow-x: hidden;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
