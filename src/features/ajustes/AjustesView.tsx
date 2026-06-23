@@ -5,6 +5,7 @@ import { Button } from '../../components/ui'
 import { REGIONES } from '../../lib/regiones'
 import { DAYS, DAY_LABEL, dateKey } from '../../lib/dates'
 import { geocode, parseCoords } from '../../lib/geocode'
+import { InvitadosManager } from '../auth/InvitadosManager'
 import type { DB, School } from '../../lib/types'
 
 const FIELD =
@@ -199,15 +200,7 @@ export function AjustesView() {
         </Button>
       </div>
 
-      <div className="mt-6 rounded-2xl bg-[#13362f] px-4 py-4 text-[12.5px] leading-relaxed text-[#bfe3cf]">
-        <span className="mb-2 inline-block rounded-md bg-gold px-2 py-0.5 text-[10px] font-bold tracking-wide text-[#1a1206]">
-          PRÓXIMAMENTE
-        </span>
-        <br />
-        <b className="text-white">Datos compartidos en vivo + login por correo.</b> Estamos conectando
-        Supabase: cuando esté listo, cada apoderado entrará con su correo y verán los cambios en
-        tiempo real entre todas las familias.
-      </div>
+      <InvitadosManager />
     </section>
   )
 }
