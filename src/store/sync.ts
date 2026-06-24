@@ -37,6 +37,16 @@ function applyRemote(incoming: DB) {
 export async function startSync() {
   if (!supabase || channel) return
 
+  // 0) Autenticar el socket de Realtime con el token del usuario. Sin esto, el
+  //    canal sale como anónimo y la RLS le oculta los cambios (se ven solo al
+  //    recargar). Se re-aplica en cada refresco de token.
+  const { data: sess } = await supabase.auth.getSession()
+  const token = sess.session?.access_token
+  if (token) supabase.realtime.setAuth(token)
+  supabase.auth.onAuthStateChange((_e, s) => {
+    if (s?.access_token) supabase!.realtime.setAuth(s.access_token)
+  })
+
   // 1) Traer el estado remoto (o sembrar con lo local si está vacío)
   const { data } = await supabase.from('turno_state').select('data').eq('id', 1).maybeSingle()
   const remote = data?.data as DB | undefined
