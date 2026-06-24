@@ -2,11 +2,30 @@ import { useMemo, useState } from 'react'
 import { Button } from '../../components/ui'
 import { REGIONES } from '../../lib/regiones'
 import { geocode, parseCoords } from '../../lib/geocode'
-import { completeOnboarding, signOut } from '../../lib/identity'
+import { completeOnboarding, inviteCoParent, signOut } from '../../lib/identity'
 
 const field =
   'w-full rounded-[10px] border-[1.5px] border-line bg-white px-3 py-2.5 text-sm text-ink outline-none focus:border-leaf focus:ring-[3px] focus:ring-leaf/15'
 const labelCls = 'mb-1.5 block text-xs font-semibold text-ink'
+
+function RolePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const opts = ['padre', 'madre', 'otro']
+  return (
+    <div className="flex gap-2">
+      {opts.map((o) => (
+        <button
+          key={o}
+          onClick={() => onChange(o)}
+          className={`flex-1 rounded-[10px] border px-3 py-2 text-sm font-semibold capitalize transition ${
+            value === o ? 'border-leaf bg-leaf text-white' : 'border-line bg-white text-ink-soft'
+          }`}
+        >
+          {o}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 export function CompleteProfile({
   userId,
@@ -17,10 +36,17 @@ export function CompleteProfile({
   email: string
   onDone: () => void
 }) {
-  const [name, setName] = useState('')
+  const [nombre, setNombre] = useState('')
+  const [apellido, setApellido] = useState('')
+  const [role, setRole] = useState('')
   const [phone, setPhone] = useState('')
   const [famName, setFamName] = useState('')
   const [kids, setKids] = useState<string[]>([''])
+  // cónyuge
+  const [spNombre, setSpNombre] = useState('')
+  const [spApellido, setSpApellido] = useState('')
+  const [spEmail, setSpEmail] = useState('')
+  // dirección
   const [text, setText] = useState('')
   const [region, setRegion] = useState('')
   const [comuna, setComuna] = useState('')
@@ -32,24 +58,25 @@ export function CompleteProfile({
 
   const comunas = useMemo(() => (region && REGIONES[region]) || [], [region])
   const cleanKids = kids.map((k) => k.trim()).filter(Boolean)
-  const canSave = name.trim() && famName.trim() && cleanKids.length > 0 && text.trim()
+  const canSave = nombre.trim() && apellido.trim() && famName.trim() && cleanKids.length > 0 && text.trim()
+  const hasSpouse = spEmail.trim().length > 0
+
+  function onApellido(v: string) {
+    setApellido(v)
+    if (!famName.trim() || famName === apellido) setFamName(v) // autocompleta apellido familiar
+  }
 
   async function doGeocode() {
-    if (!text.trim()) {
-      setGeoMsg('Escribe la dirección primero')
-      return
-    }
+    if (!text.trim()) return setGeoMsg('Escribe la dirección primero')
     setGeoMsg('buscando…')
     const r = await geocode(text.trim(), comuna, region)
     if (r) {
       setCoords(r)
       setGeoMsg(`Ubicada ✓ (${r.lat.toFixed(4)}, ${r.lng.toFixed(4)})`)
-    } else {
-      setGeoMsg('No se pudo ubicar — puedes pegar coordenadas o seguir y ubicarla después.')
-    }
+    } else setGeoMsg('No se pudo ubicar — pega coordenadas o sigue y ubícala después.')
   }
   function pasteCoords() {
-    const inp = prompt('Pega las coordenadas desde Google Maps (ej: -33.36, -70.53):', '')
+    const inp = prompt('Pega coordenadas desde Google Maps (ej: -33.36, -70.53):', '')
     if (inp == null) return
     const r = parseCoords(inp)
     if (r) {
@@ -58,18 +85,23 @@ export function CompleteProfile({
     } else setGeoMsg('Formato inválido. Debe ser: -33.36, -70.53')
   }
 
-  async function save() {
+  async function save(sendInvite: boolean) {
     if (!canSave || saving) return
     setSaving(true)
     setErr('')
     try {
-      await completeOnboarding(userId, {
-        name,
+      const familyId = await completeOnboarding(userId, {
+        nombre,
+        apellido,
+        role,
         phone,
         famName,
         kids: cleanKids.map((name) => ({ name })),
         address: { text, region, comuna, extra, lat: coords?.lat ?? null, lng: coords?.lng ?? null },
       })
+      if (sendInvite && hasSpouse) {
+        await inviteCoParent(familyId, spEmail, `${nombre} ${apellido}`.trim(), famName.trim())
+      }
       onDone()
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'No se pudo guardar. Intenta de nuevo.')
@@ -97,22 +129,25 @@ export function CompleteProfile({
         <div className="mb-2.5 font-display text-[15px] font-semibold text-leaf">👤 Tú (apoderado)</div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className={labelCls}>Tu nombre</label>
-            <input className={field} value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Fabrizio Álvarez" />
+            <label className={labelCls}>Nombre</label>
+            <input className={field} value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Fabrizio" />
           </div>
           <div>
-            <label className={labelCls}>Teléfono (WhatsApp)</label>
-            <input className={field} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+569…" inputMode="tel" />
+            <label className={labelCls}>Apellido</label>
+            <input className={field} value={apellido} onChange={(e) => onApellido(e.target.value)} placeholder="Álvarez" />
           </div>
         </div>
+        <label className={`${labelCls} mt-3`}>¿Eres…?</label>
+        <RolePicker value={role} onChange={setRole} />
+        <label className={`${labelCls} mt-3`}>Teléfono (WhatsApp)</label>
+        <input className={field} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+569…" inputMode="tel" />
 
         <hr className="my-4 border-line" />
 
         {/* FAMILIA */}
         <div className="mb-2.5 font-display text-[15px] font-semibold text-leaf">👨‍👩‍👧 Tu familia</div>
         <label className={labelCls}>Apellido / familia</label>
-        <input className={field} value={famName} onChange={(e) => setFamName(e.target.value)} placeholder="Ej: Álvarez" />
-
+        <input className={field} value={famName} onChange={(e) => setFamName(e.target.value)} placeholder="Álvarez" />
         <label className={`${labelCls} mt-3`}>Hijos</label>
         <div className="space-y-2">
           {kids.map((k, i) => (
@@ -137,26 +172,37 @@ export function CompleteProfile({
 
         <hr className="my-4 border-line" />
 
+        {/* CÓNYUGE */}
+        <div className="font-display text-[15px] font-semibold text-leaf">👥 El otro padre / madre (opcional)</div>
+        <p className="mb-2 mt-1 text-[12px] text-ink-soft">
+          Para compartir la familia (también si están separados). Le llegará una invitación cuando entre con su correo.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={labelCls}>Nombre</label>
+            <input className={field} value={spNombre} onChange={(e) => setSpNombre(e.target.value)} placeholder="María" />
+          </div>
+          <div>
+            <label className={labelCls}>Apellido</label>
+            <input className={field} value={spApellido} onChange={(e) => setSpApellido(e.target.value)} placeholder="Pérez" />
+          </div>
+        </div>
+        <label className={`${labelCls} mt-3`}>Correo del otro padre/madre</label>
+        <input className={field} type="email" inputMode="email" value={spEmail} onChange={(e) => setSpEmail(e.target.value)} placeholder="correo@ejemplo.com" />
+
+        <hr className="my-4 border-line" />
+
         {/* DIRECCIÓN */}
         <div className="mb-2.5 font-display text-[15px] font-semibold text-leaf">🏠 Dirección de la casa</div>
         <label className={labelCls}>Dirección</label>
-        <input className={field} value={text} onChange={(e) => setText(e.target.value)} placeholder="Ej: Camino del Fundador 12973" />
+        <input className={field} value={text} onChange={(e) => setText(e.target.value)} placeholder="Camino del Fundador 12973" />
         <div className="mt-3 grid grid-cols-2 gap-3">
           <div>
             <label className={labelCls}>Región</label>
-            <select
-              className={field}
-              value={region}
-              onChange={(e) => {
-                setRegion(e.target.value)
-                setComuna('')
-              }}
-            >
+            <select className={field} value={region} onChange={(e) => { setRegion(e.target.value); setComuna('') }}>
               <option value="">— Región —</option>
               {Object.keys(REGIONES).map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
+                <option key={r} value={r}>{r}</option>
               ))}
             </select>
           </div>
@@ -165,30 +211,31 @@ export function CompleteProfile({
             <select className={field} value={comuna} onChange={(e) => setComuna(e.target.value)}>
               <option value="">— Comuna —</option>
               {comunas.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
+                <option key={c} value={c}>{c}</option>
               ))}
             </select>
           </div>
         </div>
         <label className={`${labelCls} mt-3`}>Otros datos (opcional)</label>
-        <input className={field} value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="Ej: Casa T / portón verde" />
+        <input className={field} value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="Casa T / portón verde" />
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Button variant="ghost" sm onClick={doGeocode}>
-            🔎 Ubicar en el mapa
-          </Button>
-          <Button variant="ghost" sm onClick={pasteCoords}>
-            📋 Pegar coordenadas
-          </Button>
+          <Button variant="ghost" sm onClick={doGeocode}>🔎 Ubicar en el mapa</Button>
+          <Button variant="ghost" sm onClick={pasteCoords}>📋 Pegar coordenadas</Button>
           {geoMsg && <span className="text-[11px] text-ink-soft">{geoMsg}</span>}
         </div>
 
         {err && <p className="mt-4 text-xs text-clay">{err}</p>}
 
-        <Button variant="primary" className="mt-5 w-full" onClick={save} disabled={!canSave || saving}>
-          {saving ? 'Guardando…' : 'Guardar y entrar'}
-        </Button>
+        <div className="mt-5 flex flex-col gap-2">
+          <Button variant="primary" className="w-full" onClick={() => save(false)} disabled={!canSave || saving}>
+            {saving ? 'Guardando…' : 'Guardar y entrar'}
+          </Button>
+          {hasSpouse && (
+            <Button variant="gold" className="w-full" onClick={() => save(true)} disabled={!canSave || saving}>
+              {saving ? 'Guardando…' : `Guardar y enviar invitación a ${spEmail.trim()}`}
+            </Button>
+          )}
+        </div>
         <button className="mt-3 block w-full text-center text-xs font-semibold text-ink-soft" onClick={() => void signOut()}>
           Cerrar sesión
         </button>

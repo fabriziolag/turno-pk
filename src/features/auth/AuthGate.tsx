@@ -2,8 +2,15 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { hasSupabase, supabase } from '../../lib/supabase'
 import { Button } from '../../components/ui'
-import { ensureProfile, getMyContext, type MyContext } from '../../lib/identity'
+import {
+  ensureProfile,
+  getMyContext,
+  getPendingFamilyInvites,
+  type FamilyInvite,
+  type MyContext,
+} from '../../lib/identity'
 import { CompleteProfile } from '../onboarding/CompleteProfile'
+import { JoinFamily } from '../onboarding/JoinFamily'
 import { TurnosHome } from '../turnos/TurnosHome'
 
 /** Puerta de entrada v2: sesión → asegurar perfil → onboarding → app. */
@@ -17,6 +24,8 @@ function AuthGateCloud() {
   const [ready, setReady] = useState(false)
   const [ctx, setCtx] = useState<MyContext | null>(null)
   const [loadingCtx, setLoadingCtx] = useState(false)
+  const [famInvites, setFamInvites] = useState<FamilyInvite[]>([])
+  const [createOwn, setCreateOwn] = useState(false)
 
   useEffect(() => {
     supabase!.auth.getSession().then(({ data }) => {
@@ -35,7 +44,13 @@ function AuthGateCloud() {
     setLoadingCtx(true)
     try {
       await ensureProfile(session.user)
-      setCtx(await getMyContext(session.user.id))
+      const c = await getMyContext(session.user.id)
+      setCtx(c)
+      if (c && !c.profile.onboarded) {
+        setFamInvites(await getPendingFamilyInvites(session.user.email ?? ''))
+      } else {
+        setFamInvites([])
+      }
     } finally {
       setLoadingCtx(false)
     }
@@ -48,11 +63,21 @@ function AuthGateCloud() {
   if (!ready) return <Splash />
   if (!session) return <Login />
   if (loadingCtx || !ctx) return <Splash />
-  if (!ctx.profile.onboarded)
+  if (!ctx.profile.onboarded) {
+    if (famInvites.length && !createOwn)
+      return (
+        <JoinFamily
+          userId={session.user.id}
+          invites={famInvites}
+          onJoined={() => void loadCtx()}
+          onCreateOwn={() => setCreateOwn(true)}
+        />
+      )
     return (
       <CompleteProfile userId={session.user.id} email={session.user.email ?? ''} onDone={() => void loadCtx()} />
     )
-  return <TurnosHome ctx={ctx} />
+  }
+  return <TurnosHome ctx={ctx} reload={() => void loadCtx()} />
 }
 
 function Shell({ children }: { children: ReactNode }) {

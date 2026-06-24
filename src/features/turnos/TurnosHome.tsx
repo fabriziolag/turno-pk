@@ -14,12 +14,13 @@ import {
 } from '../../lib/turnos'
 import { KidPicker } from './KidPicker'
 import { TurnoDetail } from './TurnoDetail'
+import { MiFamilia } from '../onboarding/MiFamilia'
 
 const EMOJIS = ['🚐', '🚌', '🚗', '🏫', '🎒', '⭐', '🌟', '🦊', '🐢', '🐝', '🚀', '🌈', '⚽', '🎨', '🦁', '🐧']
 const field =
   'w-full rounded-[10px] border-[1.5px] border-line bg-white px-3 py-2.5 text-sm text-ink outline-none focus:border-leaf focus:ring-[3px] focus:ring-leaf/15'
 
-export function TurnosHome({ ctx }: { ctx: MyContext }) {
+export function TurnosHome({ ctx, reload }: { ctx: MyContext; reload: () => void }) {
   const { profile, family, kids } = ctx
   const { toast } = useToast()
   const [turnos, setTurnos] = useState<MyTurno[]>([])
@@ -28,6 +29,7 @@ export function TurnosHome({ ctx }: { ctx: MyContext }) {
   const [openId, setOpenId] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [accepting, setAccepting] = useState<PendingInvite | null>(null)
+  const [editing, setEditing] = useState(false)
 
   const load = useCallback(async () => {
     if (!family) return
@@ -47,6 +49,8 @@ export function TurnosHome({ ctx }: { ctx: MyContext }) {
     void load()
   }, [load])
 
+  if (editing) return <MiFamilia ctx={ctx} onBack={() => setEditing(false)} onChanged={reload} />
+
   const open = turnos.find((t) => t.id === openId) ?? null
   if (open) return <TurnoDetail turno={open} ctx={ctx} onBack={() => { setOpenId(null); void load() }} />
 
@@ -62,6 +66,12 @@ export function TurnosHome({ ctx }: { ctx: MyContext }) {
             <div className="font-display text-lg font-semibold leading-none">Hola, {profile.name || 'apoderado'}</div>
             <div className="mt-1 text-[11.5px] text-emerald-200/80">Familia {family?.fam_name || '—'}</div>
           </div>
+          <button
+            className="text-[11px] font-semibold text-emerald-200/80 hover:text-white"
+            onClick={() => setEditing(true)}
+          >
+            Mi familia
+          </button>
           <button className="text-[11px] font-semibold text-emerald-200/70 hover:text-white" onClick={() => void signOut()}>
             Salir
           </button>
