@@ -9,10 +9,9 @@ const field =
 const labelCls = 'mb-1.5 block text-xs font-semibold text-ink'
 
 function RolePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const opts = ['padre', 'madre', 'otro']
   return (
     <div className="flex gap-2">
-      {opts.map((o) => (
+      {['padre', 'madre', 'otro'].map((o) => (
         <button
           key={o}
           onClick={() => onChange(o)}
@@ -25,6 +24,14 @@ function RolePicker({ value, onChange }: { value: string; onChange: (v: string) 
       ))}
     </div>
   )
+}
+
+/** Apellido familiar = apellido del padre + apellido de la madre. */
+function composeFamName(role: string, mine: string, spouse: string) {
+  const a = mine.trim()
+  const b = spouse.trim()
+  if (!b) return a
+  return role === 'madre' ? `${b} ${a}`.trim() : `${a} ${b}`.trim()
 }
 
 export function CompleteProfile({
@@ -40,9 +47,8 @@ export function CompleteProfile({
   const [apellido, setApellido] = useState('')
   const [role, setRole] = useState('')
   const [phone, setPhone] = useState('')
-  const [famName, setFamName] = useState('')
   const [kids, setKids] = useState<string[]>([''])
-  // cónyuge
+  // cónyuge / otro padre-madre
   const [spNombre, setSpNombre] = useState('')
   const [spApellido, setSpApellido] = useState('')
   const [spEmail, setSpEmail] = useState('')
@@ -57,14 +63,10 @@ export function CompleteProfile({
   const [err, setErr] = useState('')
 
   const comunas = useMemo(() => (region && REGIONES[region]) || [], [region])
+  const famName = useMemo(() => composeFamName(role, apellido, spApellido), [role, apellido, spApellido])
   const cleanKids = kids.map((k) => k.trim()).filter(Boolean)
-  const canSave = nombre.trim() && apellido.trim() && famName.trim() && cleanKids.length > 0 && text.trim()
+  const canSave = nombre.trim() && apellido.trim() && cleanKids.length > 0 && text.trim()
   const hasSpouse = spEmail.trim().length > 0
-
-  function onApellido(v: string) {
-    setApellido(v)
-    if (!famName.trim() || famName === apellido) setFamName(v) // autocompleta apellido familiar
-  }
 
   async function doGeocode() {
     if (!text.trim()) return setGeoMsg('Escribe la dirección primero')
@@ -100,7 +102,7 @@ export function CompleteProfile({
         address: { text, region, comuna, extra, lat: coords?.lat ?? null, lng: coords?.lng ?? null },
       })
       if (sendInvite && hasSpouse) {
-        await inviteCoParent(familyId, spEmail, `${nombre} ${apellido}`.trim(), famName.trim())
+        await inviteCoParent(familyId, spEmail, `${nombre} ${apellido}`.trim(), famName)
       }
       onDone()
     } catch (e) {
@@ -134,7 +136,7 @@ export function CompleteProfile({
           </div>
           <div>
             <label className={labelCls}>Apellido</label>
-            <input className={field} value={apellido} onChange={(e) => onApellido(e.target.value)} placeholder="Álvarez" />
+            <input className={field} value={apellido} onChange={(e) => setApellido(e.target.value)} placeholder="Álvarez" />
           </div>
         </div>
         <label className={`${labelCls} mt-3`}>¿Eres…?</label>
@@ -144,10 +146,34 @@ export function CompleteProfile({
 
         <hr className="my-4 border-line" />
 
+        {/* OTRO PADRE / MADRE (antes de la familia) */}
+        <div className="font-display text-[15px] font-semibold text-leaf">👥 El otro padre / madre (opcional)</div>
+        <p className="mb-2 mt-1 text-[12px] text-ink-soft">
+          Para compartir la familia (también si están separados). Le llegará una invitación cuando entre con su correo.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={labelCls}>Nombre</label>
+            <input className={field} value={spNombre} onChange={(e) => setSpNombre(e.target.value)} placeholder="María Ignacia" />
+          </div>
+          <div>
+            <label className={labelCls}>Apellido</label>
+            <input className={field} value={spApellido} onChange={(e) => setSpApellido(e.target.value)} placeholder="Meyerholz" />
+          </div>
+        </div>
+        <label className={`${labelCls} mt-3`}>Correo del otro padre/madre</label>
+        <input className={field} type="email" inputMode="email" value={spEmail} onChange={(e) => setSpEmail(e.target.value)} placeholder="correo@ejemplo.com" />
+
+        <hr className="my-4 border-line" />
+
         {/* FAMILIA */}
         <div className="mb-2.5 font-display text-[15px] font-semibold text-leaf">👨‍👩‍👧 Tu familia</div>
-        <label className={labelCls}>Apellido / familia</label>
-        <input className={field} value={famName} onChange={(e) => setFamName(e.target.value)} placeholder="Álvarez" />
+        <label className={labelCls}>Nombre de la familia</label>
+        <div className="rounded-[10px] border border-dashed border-line bg-panel2 px-3 py-2.5 text-sm font-semibold text-ink">
+          {famName || <span className="font-normal text-ink-soft">Se arma con los apellidos (padre + madre)</span>}
+        </div>
+        <p className="mt-1 text-[11px] text-ink-soft">Se compone solo: apellido del padre + de la madre. Puedes editarlo luego en “Mi familia”.</p>
+
         <label className={`${labelCls} mt-3`}>Hijos</label>
         <div className="space-y-2">
           {kids.map((k, i) => (
@@ -169,26 +195,6 @@ export function CompleteProfile({
         <button className="mt-2 text-xs font-semibold text-leaf" onClick={() => setKids((p) => [...p, ''])}>
           ➕ Agregar otro hijo
         </button>
-
-        <hr className="my-4 border-line" />
-
-        {/* CÓNYUGE */}
-        <div className="font-display text-[15px] font-semibold text-leaf">👥 El otro padre / madre (opcional)</div>
-        <p className="mb-2 mt-1 text-[12px] text-ink-soft">
-          Para compartir la familia (también si están separados). Le llegará una invitación cuando entre con su correo.
-        </p>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Nombre</label>
-            <input className={field} value={spNombre} onChange={(e) => setSpNombre(e.target.value)} placeholder="María" />
-          </div>
-          <div>
-            <label className={labelCls}>Apellido</label>
-            <input className={field} value={spApellido} onChange={(e) => setSpApellido(e.target.value)} placeholder="Pérez" />
-          </div>
-        </div>
-        <label className={`${labelCls} mt-3`}>Correo del otro padre/madre</label>
-        <input className={field} type="email" inputMode="email" value={spEmail} onChange={(e) => setSpEmail(e.target.value)} placeholder="correo@ejemplo.com" />
 
         <hr className="my-4 border-line" />
 
