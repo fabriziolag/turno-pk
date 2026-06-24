@@ -4,7 +4,7 @@ import { hasSupabase, supabase } from '../../lib/supabase'
 import { Button } from '../../components/ui'
 import { ensureProfile, getMyContext, type MyContext } from '../../lib/identity'
 import { CompleteProfile } from '../onboarding/CompleteProfile'
-import { OnboardedHome } from '../onboarding/OnboardedHome'
+import { TurnosHome } from '../turnos/TurnosHome'
 
 /** Puerta de entrada v2: sesión → asegurar perfil → onboarding → app. */
 export function AuthGate() {
@@ -52,7 +52,7 @@ function AuthGateCloud() {
     return (
       <CompleteProfile userId={session.user.id} email={session.user.email ?? ''} onDone={() => void loadCtx()} />
     )
-  return <OnboardedHome ctx={ctx} />
+  return <TurnosHome ctx={ctx} />
 }
 
 function Shell({ children }: { children: ReactNode }) {
