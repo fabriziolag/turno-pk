@@ -1,13 +1,58 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { hasSupabase, supabase } from '../../lib/supabase'
-import { startSync, stopSync } from '../../store/sync'
 import { Button } from '../../components/ui'
+import { ensureProfile, getMyContext, type MyContext } from '../../lib/identity'
+import { CompleteProfile } from '../onboarding/CompleteProfile'
+import { OnboardedHome } from '../onboarding/OnboardedHome'
 
-/** Envuelve la app. Sin Supabase configurado → modo local (sin login). */
-export function AuthGate({ children }: { children: ReactNode }) {
-  if (!hasSupabase || !supabase) return <>{children}</>
-  return <AuthGateCloud>{children}</AuthGateCloud>
+/** Puerta de entrada v2: sesión → asegurar perfil → onboarding → app. */
+export function AuthGate() {
+  if (!hasSupabase || !supabase) return <NoSupabase />
+  return <AuthGateCloud />
+}
+
+function AuthGateCloud() {
+  const [session, setSession] = useState<Session | null>(null)
+  const [ready, setReady] = useState(false)
+  const [ctx, setCtx] = useState<MyContext | null>(null)
+  const [loadingCtx, setLoadingCtx] = useState(false)
+
+  useEffect(() => {
+    supabase!.auth.getSession().then(({ data }) => {
+      setSession(data.session)
+      setReady(true)
+    })
+    const { data: sub } = supabase!.auth.onAuthStateChange((_e, s) => setSession(s))
+    return () => sub.subscription.unsubscribe()
+  }, [])
+
+  const loadCtx = useCallback(async () => {
+    if (!session) {
+      setCtx(null)
+      return
+    }
+    setLoadingCtx(true)
+    try {
+      await ensureProfile(session.user)
+      setCtx(await getMyContext(session.user.id))
+    } finally {
+      setLoadingCtx(false)
+    }
+  }, [session])
+
+  useEffect(() => {
+    void loadCtx()
+  }, [loadCtx])
+
+  if (!ready) return <Splash />
+  if (!session) return <Login />
+  if (loadingCtx || !ctx) return <Splash />
+  if (!ctx.profile.onboarded)
+    return (
+      <CompleteProfile userId={session.user.id} email={session.user.email ?? ''} onDone={() => void loadCtx()} />
+    )
+  return <OnboardedHome ctx={ctx} />
 }
 
 function Shell({ children }: { children: ReactNode }) {
@@ -29,49 +74,18 @@ function Shell({ children }: { children: ReactNode }) {
   )
 }
 
-function AuthGateCloud({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null)
-  const [ready, setReady] = useState(false)
-  const [member, setMember] = useState<boolean | null>(null)
-
-  useEffect(() => {
-    supabase!.auth.getSession().then(({ data }) => {
-      setSession(data.session)
-      setReady(true)
-    })
-    const { data: sub } = supabase!.auth.onAuthStateChange((_e, s) => setSession(s))
-    return () => sub.subscription.unsubscribe()
-  }, [])
-
-  useEffect(() => {
-    let active = true
-    if (!session) {
-      setMember(null)
-      stopSync()
-      return
-    }
-    supabase!.rpc('is_member').then(({ data }) => {
-      if (!active) return
-      const ok = Boolean(data)
-      setMember(ok)
-      if (ok) void startSync()
-    })
-    return () => {
-      active = false
-    }
-  }, [session])
-
-  if (!ready) return <Splash />
-  if (!session) return <Login />
-  if (member === null) return <Splash />
-  if (!member) return <NotInvited email={session.user.email ?? ''} />
-  return <>{children}</>
-}
-
 function Splash() {
   return (
     <Shell>
       <p className="text-sm text-ink-soft">Cargando…</p>
+    </Shell>
+  )
+}
+
+function NoSupabase() {
+  return (
+    <Shell>
+      <p className="text-sm text-ink-soft">Falta configurar Supabase (variables de entorno).</p>
     </Shell>
   )
 }
@@ -123,9 +137,7 @@ function Login() {
   return (
     <Shell>
       <h2 className="font-display text-xl font-semibold text-ink">Entrar al turno</h2>
-      <p className="mt-1 text-sm text-ink-soft">
-        Entra con Google o con un enlace a tu correo. Solo correos invitados pueden entrar.
-      </p>
+      <p className="mt-1 text-sm text-ink-soft">Entra con Google o con un enlace a tu correo.</p>
 
       <button
         onClick={signInWithGoogle}
@@ -157,21 +169,6 @@ function Login() {
       {err && <p className="mt-2 text-xs text-clay">{err}</p>}
       <Button variant="primary" className="mt-4 w-full" onClick={send} disabled={sending || !email.trim()}>
         {sending ? 'Enviando…' : 'Enviarme el enlace'}
-      </Button>
-    </Shell>
-  )
-}
-
-function NotInvited({ email }: { email: string }) {
-  return (
-    <Shell>
-      <h2 className="font-display text-xl font-semibold text-ink">Aún no estás invitado 🔒</h2>
-      <p className="mt-2 text-sm text-ink-soft">
-        El correo <b>{email}</b> no está en la lista del turno. Pídele al organizador que te agregue
-        desde <b>Ajustes → Invitados</b>.
-      </p>
-      <Button variant="ghost" className="mt-4 w-full" onClick={() => supabase!.auth.signOut()}>
-        Salir
       </Button>
     </Shell>
   )
