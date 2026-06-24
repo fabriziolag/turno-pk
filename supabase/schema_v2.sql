@@ -206,7 +206,7 @@ create policy profiles_upd on public.profiles for update to authenticated
 -- ---- families ----
 drop policy if exists families_sel on public.families;
 create policy families_sel on public.families for select to authenticated
-  using (public.can_edit_family(id) or public.shares_turno_with_family(id));
+  using (created_by = auth.uid() or public.can_edit_family(id) or public.shares_turno_with_family(id));
 drop policy if exists families_ins on public.families;
 create policy families_ins on public.families for insert to authenticated
   with check (created_by = auth.uid());

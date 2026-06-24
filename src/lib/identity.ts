@@ -117,13 +117,14 @@ export async function completeOnboarding(userId: string, input: OnboardingInput)
     .eq('id', userId)
   if (pe) throw pe
 
-  const { data: fam, error: fe } = await supabase
+  // Generamos el id en el cliente: insertar y RE-LEER la familia chocaría con la
+  // RLS (aún no existe la membresía que da permiso de lectura). Con id propio no
+  // hace falta leerla de vuelta.
+  const familyId = crypto.randomUUID()
+  const { error: fe } = await supabase
     .from('families')
-    .insert({ fam_name: input.famName.trim(), created_by: userId })
-    .select('id')
-    .single()
+    .insert({ id: familyId, fam_name: input.famName.trim(), created_by: userId })
   if (fe) throw fe
-  const familyId = (fam as { id: string }).id
 
   const { error: me } = await supabase
     .from('family_members')
