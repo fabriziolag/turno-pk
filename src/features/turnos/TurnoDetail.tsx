@@ -13,6 +13,7 @@ import {
 import { KidPicker } from './KidPicker'
 import { TurnoGrilla } from './TurnoGrilla'
 import { TurnoAjustes } from './TurnoAjustes'
+import { TurnoHoy } from './TurnoHoy'
 
 const field =
   'w-full rounded-[10px] border-[1.5px] border-line bg-white px-3 py-2.5 text-sm text-ink outline-none focus:border-leaf focus:ring-[3px] focus:ring-leaf/15'
@@ -115,12 +116,14 @@ export function TurnoDetail({
         <div className="rounded-b-2xl rounded-tr-2xl bg-panel p-5 shadow-2xl shadow-black/30">
           {tab === 'grilla' && <TurnoGrilla turno={turno} members={members} />}
 
+          {tab === 'hoy' && <TurnoHoy turno={turno} members={members} />}
+
           {tab === 'ajustes' && <TurnoAjustes turno={turno} onSaved={onChanged} />}
 
-          {(tab === 'hoy' || tab === 'ruta') && (
+          {tab === 'ruta' && (
             <div className="rounded-2xl border border-dashed border-gold bg-[#fbf3da] p-6 text-center text-[13px] leading-relaxed text-[#6b551d]">
-              {tab === 'hoy' ? '☀️' : '🗺️'} <b>Próximamente.</b> Primero arma la <b>Grilla</b> y los{' '}
-              <b>Ajustes</b> del turno; la confirmación diaria y la ruta vienen en la siguiente entrega.
+              🗺️ <b>Próximamente.</b> El mapa con la ruta de entrega (orden óptimo + Waze) viene en la
+              siguiente entrega. Por ahora ya puedes planificar (Grilla) y confirmar el día (Hoy).
             </div>
           )}
 
