@@ -14,6 +14,7 @@ import { KidPicker } from './KidPicker'
 import { TurnoGrilla } from './TurnoGrilla'
 import { TurnoAjustes } from './TurnoAjustes'
 import { TurnoHoy } from './TurnoHoy'
+import { TurnoRuta } from './TurnoRuta'
 
 const field =
   'w-full rounded-[10px] border-[1.5px] border-line bg-white px-3 py-2.5 text-sm text-ink outline-none focus:border-leaf focus:ring-[3px] focus:ring-leaf/15'
@@ -120,12 +121,7 @@ export function TurnoDetail({
 
           {tab === 'ajustes' && <TurnoAjustes turno={turno} onSaved={onChanged} />}
 
-          {tab === 'ruta' && (
-            <div className="rounded-2xl border border-dashed border-gold bg-[#fbf3da] p-6 text-center text-[13px] leading-relaxed text-[#6b551d]">
-              🗺️ <b>Próximamente.</b> El mapa con la ruta de entrega (orden óptimo + Waze) viene en la
-              siguiente entrega. Por ahora ya puedes planificar (Grilla) y confirmar el día (Hoy).
-            </div>
-          )}
+          {tab === 'ruta' && <TurnoRuta turno={turno} members={members} />}
 
           {tab === 'equipo' && (
             <div>

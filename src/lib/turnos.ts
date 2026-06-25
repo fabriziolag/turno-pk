@@ -34,6 +34,7 @@ export interface TurnoMemberView {
   family_id: string
   fam_name: string
   kids: { id: string; name: string }[] // hijos que participan en este turno
+  address: { text: string; lat: number | null; lng: number | null } | null
 }
 
 function db() {
@@ -127,19 +128,31 @@ export async function getTurnoMembers(turnoId: string): Promise<TurnoMemberView[
   const rows = tm ?? []
   const famIds = rows.map((r) => r.family_id as string)
   if (!famIds.length) return []
-  const [{ data: fams }, { data: kids }] = await Promise.all([
+  const [{ data: fams }, { data: kids }, { data: addrs }] = await Promise.all([
     db().from('families').select('id, fam_name').in('id', famIds),
     db().from('kids').select('id, family_id, name').in('family_id', famIds),
+    db().from('addresses').select('family_id, text, lat, lng, sort').in('family_id', famIds).order('sort'),
   ])
   const famName = new Map((fams ?? []).map((f) => [f.id as string, f.fam_name as string]))
+  const famAddr = new Map<string, { text: string; lat: number | null; lng: number | null }>()
+  for (const a of addrs ?? []) {
+    const fid = a.family_id as string
+    const cur = famAddr.get(fid)
+    // preferir la primera con coordenadas
+    if (!cur || (cur.lat == null && a.lat != null)) {
+      famAddr.set(fid, { text: (a.text as string) ?? '', lat: (a.lat as number) ?? null, lng: (a.lng as number) ?? null })
+    }
+  }
   return rows.map((r) => {
     const kidIds = new Set((r.kid_ids as string[]) ?? [])
+    const fid = r.family_id as string
     return {
-      family_id: r.family_id as string,
-      fam_name: famName.get(r.family_id as string) ?? '—',
+      family_id: fid,
+      fam_name: famName.get(fid) ?? '—',
       kids: (kids ?? [])
-        .filter((k) => k.family_id === r.family_id && kidIds.has(k.id as string))
+        .filter((k) => k.family_id === fid && kidIds.has(k.id as string))
         .map((k) => ({ id: k.id as string, name: k.name as string })),
+      address: famAddr.get(fid) ?? null,
     }
   })
 }
