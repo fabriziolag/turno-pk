@@ -1,16 +1,30 @@
 import { useMemo, useState } from 'react'
 import { Button } from '../../components/ui'
+import { Collapsible } from '../../components/Collapsible'
+import { PhotoButton } from '../../components/PhotoButton'
 import { useToast } from '../../components/toastStore'
 import { REGIONES } from '../../lib/regiones'
 import { geocode, parseCoords } from '../../lib/geocode'
 import {
+  addAddress,
+  addContact,
   addKid,
   inviteCoParent,
+  removeAddress,
+  removeContact,
   removeKid,
   renameKid,
+  setAddressPhoto,
+  setContactPhoto,
+  setKidPhoto,
+  setProfilePhoto,
+  updateAddress,
+  updateContact,
   updateFamilyName,
   updateMe,
-  upsertAddress,
+  type AddressInput,
+  type AddressRow,
+  type Contact,
   type MyContext,
 } from '../../lib/identity'
 
@@ -19,6 +33,7 @@ const field =
 const labelCls = 'mb-1.5 block text-xs font-semibold text-ink'
 const sectionCls = 'rounded-3xl bg-panel p-5 shadow-2xl shadow-black/30'
 const headCls = 'mb-3 font-display text-[15px] font-semibold text-leaf'
+const ADDR_LABELS = ['Casa', 'Casa papá', 'Casa mamá', 'Otra']
 
 function RolePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
@@ -47,34 +62,20 @@ export function MiFamilia({
   onBack: () => void
   onChanged: () => void
 }) {
-  const { profile, family, kids, addresses, coParents, myRole } = ctx
+  const { profile, family, kids, addresses, contacts, coParents, pendingCoParents } = ctx
   const { toast } = useToast()
 
-  // perfil
   const [nombre, setNombre] = useState(profile.name)
   const [apellido, setApellido] = useState(profile.apellido)
   const [phone, setPhone] = useState(profile.phone)
-  const [role, setRole] = useState(myRole)
-  // familia
+  const [role, setRole] = useState(ctx.myRole)
   const [famName, setFamName] = useState(family?.fam_name ?? '')
-  // hijos (editable local)
   const [kidsLocal, setKidsLocal] = useState(kids.map((k) => ({ id: k.id, name: k.name })))
-  // dirección
-  const addr = addresses[0]
-  const [text, setText] = useState(addr?.text ?? '')
-  const [region, setRegion] = useState(addr?.region ?? '')
-  const [comuna, setComuna] = useState(addr?.comuna ?? '')
-  const [extra, setExtra] = useState(addr?.extra ?? '')
-  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(
-    addr?.lat != null && addr?.lng != null ? { lat: addr.lat, lng: addr.lng } : null,
-  )
-  const [geoMsg, setGeoMsg] = useState('')
-  // co-apoderado
   const [coName, setCoName] = useState('')
   const [coApellido, setCoApellido] = useState('')
   const [coEmail, setCoEmail] = useState('')
-
-  const comunas = useMemo(() => (region && REGIONES[region]) || [], [region])
+  const [addingAddr, setAddingAddr] = useState(false)
+  const [addingContact, setAddingContact] = useState(false)
 
   async function run(fn: () => Promise<void>, ok: string) {
     try {
@@ -84,25 +85,6 @@ export function MiFamilia({
     } catch (e) {
       toast(e instanceof Error ? e.message : 'No se pudo guardar', 'warn')
     }
-  }
-
-  async function doGeocode() {
-    if (!text.trim()) return setGeoMsg('Escribe la dirección primero')
-    setGeoMsg('buscando…')
-    const r = await geocode(text.trim(), comuna, region)
-    if (r) {
-      setCoords(r)
-      setGeoMsg(`Ubicada ✓`)
-    } else setGeoMsg('No se pudo ubicar — pega coordenadas.')
-  }
-  function pasteCoords() {
-    const inp = prompt('Pega coordenadas (ej: -33.36, -70.53):', '')
-    if (inp == null) return
-    const r = parseCoords(inp)
-    if (r) {
-      setCoords(r)
-      setGeoMsg('Coordenadas fijadas ✓')
-    } else setGeoMsg('Formato inválido')
   }
 
   async function saveKids() {
@@ -122,11 +104,7 @@ export function MiFamilia({
     }
   }
 
-  if (!family) {
-    return (
-      <div className="grid min-h-dvh place-items-center px-5 text-emerald-200/80">Cargando…</div>
-    )
-  }
+  if (!family) return <div className="grid min-h-dvh place-items-center text-emerald-200/80">Cargando…</div>
 
   return (
     <div className="min-h-dvh px-4 py-6">
@@ -135,17 +113,23 @@ export function MiFamilia({
           ‹ Volver
         </button>
 
-        {/* Perfil */}
+        {/* MIS DATOS */}
         <div className={sectionCls}>
           <div className={headCls}>👤 Mis datos</div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={labelCls}>Nombre</label>
-              <input className={field} value={nombre} onChange={(e) => setNombre(e.target.value)} />
-            </div>
-            <div>
-              <label className={labelCls}>Apellido</label>
-              <input className={field} value={apellido} onChange={(e) => setApellido(e.target.value)} />
+          <div className="flex items-center gap-3">
+            <PhotoButton
+              value={profile.photo}
+              onPick={(d) => void run(() => setProfilePhoto(profile.id, d), 'Foto guardada ✓')}
+            />
+            <div className="grid flex-1 grid-cols-2 gap-3">
+              <div>
+                <label className={labelCls}>Nombre</label>
+                <input className={field} value={nombre} onChange={(e) => setNombre(e.target.value)} />
+              </div>
+              <div>
+                <label className={labelCls}>Apellido</label>
+                <input className={field} value={apellido} onChange={(e) => setApellido(e.target.value)} />
+              </div>
             </div>
           </div>
           <label className={`${labelCls} mt-3`}>¿Eres…?</label>
@@ -162,7 +146,7 @@ export function MiFamilia({
           </Button>
         </div>
 
-        {/* Familia + hijos */}
+        {/* FAMILIA + HIJOS */}
         <div className={sectionCls}>
           <div className={headCls}>👨‍👩‍👧 Mi familia</div>
           <label className={labelCls}>Apellido / familia</label>
@@ -176,7 +160,16 @@ export function MiFamilia({
           <label className={`${labelCls} mt-4`}>Hijos</label>
           <div className="space-y-2">
             {kidsLocal.map((k, i) => (
-              <div key={k.id || `new-${i}`} className="flex gap-2">
+              <div key={k.id || `new-${i}`} className="flex items-center gap-2">
+                {k.id ? (
+                  <PhotoButton
+                    size={40}
+                    value={kids.find((o) => o.id === k.id)?.photo}
+                    onPick={(d) => void run(() => setKidPhoto(k.id, d), 'Foto guardada ✓')}
+                  />
+                ) : (
+                  <div className="grid size-10 flex-none place-items-center rounded-full bg-panel2 text-ink-soft">🧒</div>
+                )}
                 <input
                   className={field}
                   value={k.name}
@@ -206,55 +199,20 @@ export function MiFamilia({
           </div>
         </div>
 
-        {/* Dirección */}
-        <div className={sectionCls}>
-          <div className={headCls}>🏠 Dirección</div>
-          <input className={field} value={text} onChange={(e) => setText(e.target.value)} placeholder="Dirección" />
-          <div className="mt-3 grid grid-cols-2 gap-3">
-            <select className={field} value={region} onChange={(e) => { setRegion(e.target.value); setComuna('') }}>
-              <option value="">— Región —</option>
-              {Object.keys(REGIONES).map((r) => (
-                <option key={r} value={r}>{r}</option>
-              ))}
-            </select>
-            <select className={field} value={comuna} onChange={(e) => setComuna(e.target.value)}>
-              <option value="">— Comuna —</option>
-              {comunas.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
-          <input className={`${field} mt-3`} value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="Otros datos (opcional)" />
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <Button variant="ghost" sm onClick={doGeocode}>🔎 Ubicar</Button>
-            <Button variant="ghost" sm onClick={pasteCoords}>📋 Coordenadas</Button>
-            {geoMsg && <span className="text-[11px] text-ink-soft">{geoMsg}</span>}
-          </div>
-          <Button
-            variant="primary"
-            sm
-            className="mt-3"
-            onClick={() =>
-              run(
-                () => upsertAddress(family.id, addr?.id ?? null, { text, region, comuna, extra, lat: coords?.lat ?? null, lng: coords?.lng ?? null }),
-                'Dirección guardada ✓',
-              )
-            }
-          >
-            Guardar dirección
-          </Button>
-        </div>
-
-        {/* Co-apoderados */}
+        {/* PADRES / APODERADOS */}
         <div className={sectionCls}>
           <div className={headCls}>👥 Padres / apoderados de la familia</div>
           <div className="space-y-1.5">
             {coParents.map((c) => (
-              <div key={c.profile_id} className="flex items-center justify-between rounded-lg bg-panel2 px-3 py-2 text-sm">
-                <span className="text-ink">
-                  {c.name} {c.apellido} {c.role && <span className="text-ink-soft">· {c.role}</span>}
-                  {c.profile_id === profile.id && <span className="ml-1 text-[11px] text-leaf">(tú)</span>}
-                </span>
+              <div key={c.profile_id} className="rounded-lg bg-panel2 px-3 py-2 text-sm text-ink">
+                {c.name} {c.apellido} {c.role && <span className="text-ink-soft">· {c.role}</span>}
+                {c.profile_id === profile.id && <span className="ml-1 text-[11px] text-leaf">(tú)</span>}
+              </div>
+            ))}
+            {pendingCoParents.map((p) => (
+              <div key={p.id} className="flex items-center justify-between rounded-lg bg-[#faf6e8] px-3 py-2 text-sm">
+                <span className="text-gold-deep">{p.email}</span>
+                <span className="text-[11px] font-semibold text-gold-deep">invitación pendiente</span>
               </div>
             ))}
           </div>
@@ -281,6 +239,201 @@ export function MiFamilia({
             </Button>
           </div>
         </div>
+
+        {/* DIRECCIONES (colapsable) */}
+        <Collapsible title="🏠 Direcciones de la casa">
+          <div className="space-y-3">
+            {addresses.map((a) => (
+              <AddressCard key={a.id} familyId={family.id} addr={a} onChanged={onChanged} />
+            ))}
+            {addingAddr && (
+              <AddressCard
+                familyId={family.id}
+                addr={null}
+                onChanged={() => {
+                  setAddingAddr(false)
+                  onChanged()
+                }}
+              />
+            )}
+            {!addingAddr && (
+              <button className="text-xs font-semibold text-leaf" onClick={() => setAddingAddr(true)}>
+                ➕ Agregar otra dirección
+              </button>
+            )}
+          </div>
+        </Collapsible>
+
+        {/* CONTACTOS (colapsable) */}
+        <Collapsible title="📞 Contactos de la casa (nana, abuelo, quien recibe…)">
+          <div className="space-y-3">
+            {contacts.map((c) => (
+              <ContactCard key={c.id} familyId={family.id} contact={c} onChanged={onChanged} />
+            ))}
+            {addingContact && (
+              <ContactCard
+                familyId={family.id}
+                contact={null}
+                onChanged={() => {
+                  setAddingContact(false)
+                  onChanged()
+                }}
+              />
+            )}
+            {!addingContact && (
+              <button className="text-xs font-semibold text-leaf" onClick={() => setAddingContact(true)}>
+                ➕ Agregar contacto
+              </button>
+            )}
+          </div>
+        </Collapsible>
+      </div>
+    </div>
+  )
+}
+
+function AddressCard({
+  familyId,
+  addr,
+  onChanged,
+}: {
+  familyId: string
+  addr: AddressRow | null
+  onChanged: () => void
+}) {
+  const { toast } = useToast()
+  const [labelV, setLabelV] = useState(addr?.label ?? 'Casa')
+  const [text, setText] = useState(addr?.text ?? '')
+  const [region, setRegion] = useState(addr?.region ?? '')
+  const [comuna, setComuna] = useState(addr?.comuna ?? '')
+  const [extra, setExtra] = useState(addr?.extra ?? '')
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(
+    addr?.lat != null && addr?.lng != null ? { lat: addr.lat, lng: addr.lng } : null,
+  )
+  const [geoMsg, setGeoMsg] = useState('')
+  const comunas = useMemo(() => (region && REGIONES[region]) || [], [region])
+
+  const data: AddressInput = { label: labelV, text, region, comuna, extra, lat: coords?.lat ?? null, lng: coords?.lng ?? null }
+
+  async function save() {
+    try {
+      if (addr) await updateAddress(addr.id, data)
+      else await addAddress(familyId, data, 0)
+      toast('Dirección guardada ✓', 'ok')
+      onChanged()
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'No se pudo guardar', 'warn')
+    }
+  }
+  async function doGeo() {
+    if (!text.trim()) return setGeoMsg('Escribe la dirección')
+    setGeoMsg('buscando…')
+    const r = await geocode(text.trim(), comuna, region)
+    if (r) { setCoords(r); setGeoMsg('Ubicada ✓') } else setGeoMsg('No se pudo — pega coordenadas')
+  }
+  function paste() {
+    const inp = prompt('Coordenadas (ej -33.36, -70.53):', '')
+    if (inp == null) return
+    const r = parseCoords(inp)
+    if (r) { setCoords(r); setGeoMsg('Coordenadas ✓') } else setGeoMsg('Formato inválido')
+  }
+
+  return (
+    <div className="rounded-2xl border border-line bg-white p-3">
+      <div className="flex items-start gap-3">
+        {addr ? (
+          <PhotoButton size={56} rounded="lg" value={addr.house_photo} placeholder="🏠"
+            onPick={(d) => { void setAddressPhoto(addr.id, d).then(onChanged) }} />
+        ) : (
+          <div className="grid size-14 flex-none place-items-center rounded-xl bg-panel2 text-ink-soft">🏠</div>
+        )}
+        <select className={field} value={labelV} onChange={(e) => setLabelV(e.target.value)}>
+          {ADDR_LABELS.map((l) => (
+            <option key={l} value={l}>{l}</option>
+          ))}
+        </select>
+      </div>
+      <input className={`${field} mt-2`} value={text} onChange={(e) => setText(e.target.value)} placeholder="Dirección" />
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <select className={field} value={region} onChange={(e) => { setRegion(e.target.value); setComuna('') }}>
+          <option value="">— Región —</option>
+          {Object.keys(REGIONES).map((r) => (<option key={r} value={r}>{r}</option>))}
+        </select>
+        <select className={field} value={comuna} onChange={(e) => setComuna(e.target.value)}>
+          <option value="">— Comuna —</option>
+          {comunas.map((c) => (<option key={c} value={c}>{c}</option>))}
+        </select>
+      </div>
+      <input className={`${field} mt-2`} value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="Otros datos (opcional)" />
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <Button variant="ghost" sm onClick={doGeo}>🔎 Ubicar</Button>
+        <Button variant="ghost" sm onClick={paste}>📋 Coordenadas</Button>
+        {geoMsg && <span className="text-[11px] text-ink-soft">{geoMsg}</span>}
+      </div>
+      <div className="mt-2 flex gap-2">
+        <Button variant="primary" sm onClick={save}>Guardar dirección</Button>
+        {addr && (
+          <Button variant="danger" sm onClick={() => { void removeAddress(addr.id).then(onChanged) }}>
+            Eliminar
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ContactCard({
+  familyId,
+  contact,
+  onChanged,
+}: {
+  familyId: string
+  contact: Contact | null
+  onChanged: () => void
+}) {
+  const { toast } = useToast()
+  const [name, setName] = useState(contact?.name ?? '')
+  const [relation, setRelation] = useState(contact?.relation ?? '')
+  const [phone, setPhone] = useState(contact?.phone ?? '')
+  const [isDefault, setIsDefault] = useState(contact?.is_default ?? false)
+
+  async function save() {
+    try {
+      const d = { name, relation, phone, is_default: isDefault }
+      if (contact) await updateContact(contact.id, d)
+      else await addContact(familyId, d)
+      toast('Contacto guardado ✓', 'ok')
+      onChanged()
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'No se pudo guardar', 'warn')
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-line bg-white p-3">
+      <div className="flex items-start gap-3">
+        {contact ? (
+          <PhotoButton size={48} value={contact.photo} onPick={(d) => { void setContactPhoto(contact.id, d).then(onChanged) }} />
+        ) : (
+          <div className="grid size-12 flex-none place-items-center rounded-full bg-panel2 text-ink-soft">👤</div>
+        )}
+        <div className="grid flex-1 grid-cols-2 gap-2">
+          <input className={field} value={name} onChange={(e) => setName(e.target.value)} placeholder="Nombre" />
+          <input className={field} value={relation} onChange={(e) => setRelation(e.target.value)} placeholder="Relación (nana, abuelo…)" />
+        </div>
+      </div>
+      <input className={`${field} mt-2`} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Teléfono" inputMode="tel" />
+      <label className="mt-2 flex cursor-pointer items-center gap-2 text-[12px] text-ink">
+        <input type="checkbox" checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)} className="size-4 accent-leaf" />
+        ⭐ Contacto principal (recibe al niño / abre el portón)
+      </label>
+      <div className="mt-2 flex gap-2">
+        <Button variant="primary" sm onClick={save}>Guardar contacto</Button>
+        {contact && (
+          <Button variant="danger" sm onClick={() => { void removeContact(contact.id).then(onChanged) }}>
+            Eliminar
+          </Button>
+        )}
       </div>
     </div>
   )

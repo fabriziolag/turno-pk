@@ -32,6 +32,7 @@ export interface AddressRow {
   region: string
   comuna: string
   extra: string
+  house_photo: string
   lat: number | null
   lng: number | null
   sort: number
@@ -43,13 +44,24 @@ export interface CoParent {
   email: string
   role: string
 }
+export interface Contact {
+  id: string
+  family_id: string
+  name: string
+  relation: string
+  phone: string
+  is_default: boolean
+  photo: string
+}
 
 export interface MyContext {
   profile: Profile
   family: Family | null
   kids: Kid[]
   addresses: AddressRow[]
+  contacts: Contact[]
   coParents: CoParent[]
+  pendingCoParents: { id: string; email: string }[]
   myRole: string
 }
 
@@ -83,20 +95,27 @@ export async function getMyContext(userId: string): Promise<MyContext | null> {
   let family: Family | null = null
   let kids: Kid[] = []
   let addresses: AddressRow[] = []
+  let contacts: Contact[] = []
   let coParents: CoParent[] = []
+  let pendingCoParents: { id: string; email: string }[] = []
   const myRole = (mine?.role as string) ?? ''
 
   if (mine?.family_id) {
     const famId = mine.family_id as string
-    const [{ data: fam }, { data: k }, { data: a }, { data: members }] = await Promise.all([
-      db().from('families').select('*').eq('id', famId).maybeSingle(),
-      db().from('kids').select('*').eq('family_id', famId).order('sort'),
-      db().from('addresses').select('*').eq('family_id', famId).order('sort'),
-      db().from('family_members').select('profile_id, role').eq('family_id', famId),
-    ])
+    const [{ data: fam }, { data: k }, { data: a }, { data: c }, { data: members }, { data: inv }] =
+      await Promise.all([
+        db().from('families').select('*').eq('id', famId).maybeSingle(),
+        db().from('kids').select('*').eq('family_id', famId).order('sort'),
+        db().from('addresses').select('*').eq('family_id', famId).order('sort'),
+        db().from('contacts').select('*').eq('family_id', famId),
+        db().from('family_members').select('profile_id, role').eq('family_id', famId),
+        db().from('family_invites').select('id, email').eq('family_id', famId).eq('status', 'pending'),
+      ])
     family = (fam as Family) ?? null
     kids = (k as Kid[]) ?? []
     addresses = (a as AddressRow[]) ?? []
+    contacts = (c as Contact[]) ?? []
+    pendingCoParents = (inv ?? []) as { id: string; email: string }[]
 
     const memberRows = (members ?? []) as { profile_id: string; role: string }[]
     const ids = memberRows.map((m) => m.profile_id)
@@ -117,7 +136,7 @@ export async function getMyContext(userId: string): Promise<MyContext | null> {
       }
     })
   }
-  return { profile: profile as Profile, family, kids, addresses, coParents, myRole }
+  return { profile: profile as Profile, family, kids, addresses, contacts, coParents, pendingCoParents, myRole }
 }
 
 export interface OnboardingInput {
@@ -318,6 +337,85 @@ export async function upsertAddress(
     ? db().from('addresses').update(row).eq('id', addrId)
     : db().from('addresses').insert(row)
   const { error } = await q
+  if (error) throw error
+}
+
+// ---------- Fotos ----------
+export async function setProfilePhoto(userId: string, photo: string): Promise<void> {
+  const { error } = await db().from('profiles').update({ photo }).eq('id', userId)
+  if (error) throw error
+}
+export async function setKidPhoto(kidId: string, photo: string): Promise<void> {
+  const { error } = await db().from('kids').update({ photo }).eq('id', kidId)
+  if (error) throw error
+}
+export async function setAddressPhoto(addrId: string, house_photo: string): Promise<void> {
+  const { error } = await db().from('addresses').update({ house_photo }).eq('id', addrId)
+  if (error) throw error
+}
+export async function setContactPhoto(contactId: string, photo: string): Promise<void> {
+  const { error } = await db().from('contacts').update({ photo }).eq('id', contactId)
+  if (error) throw error
+}
+
+// ---------- Direcciones (múltiples) ----------
+export interface AddressInput {
+  label: string
+  text: string
+  region: string
+  comuna: string
+  extra: string
+  lat: number | null
+  lng: number | null
+}
+export async function addAddress(familyId: string, a: AddressInput, sort: number): Promise<void> {
+  const { error } = await db()
+    .from('addresses')
+    .insert({ family_id: familyId, ...trimAddr(a), sort })
+  if (error) throw error
+}
+export async function updateAddress(addrId: string, a: AddressInput): Promise<void> {
+  const { error } = await db().from('addresses').update(trimAddr(a)).eq('id', addrId)
+  if (error) throw error
+}
+export async function removeAddress(addrId: string): Promise<void> {
+  const { error } = await db().from('addresses').delete().eq('id', addrId)
+  if (error) throw error
+}
+function trimAddr(a: AddressInput) {
+  return {
+    label: a.label.trim() || 'Casa',
+    text: a.text.trim(),
+    region: a.region,
+    comuna: a.comuna,
+    extra: a.extra.trim(),
+    lat: a.lat,
+    lng: a.lng,
+  }
+}
+
+// ---------- Contactos de la casa ----------
+export interface ContactInput {
+  name: string
+  relation: string
+  phone: string
+  is_default: boolean
+}
+export async function addContact(familyId: string, c: ContactInput): Promise<void> {
+  const { error } = await db()
+    .from('contacts')
+    .insert({ family_id: familyId, name: c.name.trim(), relation: c.relation.trim(), phone: c.phone.trim(), is_default: c.is_default })
+  if (error) throw error
+}
+export async function updateContact(id: string, c: ContactInput): Promise<void> {
+  const { error } = await db()
+    .from('contacts')
+    .update({ name: c.name.trim(), relation: c.relation.trim(), phone: c.phone.trim(), is_default: c.is_default })
+    .eq('id', id)
+  if (error) throw error
+}
+export async function removeContact(id: string): Promise<void> {
+  const { error } = await db().from('contacts').delete().eq('id', id)
   if (error) throw error
 }
 
