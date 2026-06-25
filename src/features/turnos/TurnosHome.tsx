@@ -52,7 +52,15 @@ export function TurnosHome({ ctx, reload }: { ctx: MyContext; reload: () => void
   if (editing) return <MiFamilia ctx={ctx} onBack={() => setEditing(false)} onChanged={reload} />
 
   const open = turnos.find((t) => t.id === openId) ?? null
-  if (open) return <TurnoDetail turno={open} ctx={ctx} onBack={() => { setOpenId(null); void load() }} />
+  if (open)
+    return (
+      <TurnoDetail
+        turno={open}
+        ctx={ctx}
+        onBack={() => { setOpenId(null); void load() }}
+        onChanged={() => void load()}
+      />
+    )
 
   return (
     <div className="min-h-dvh px-4 py-6">

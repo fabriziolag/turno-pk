@@ -7,8 +7,21 @@ export interface Turno {
   emoji: string
   name: string
   created_by: string
+  school_name: string
+  school_text: string
+  school_region: string
+  school_comuna: string
+  school_extra: string
+  school_lat: number | null
+  school_lng: number | null
+  exit_times: Record<string, string>
 }
 export type MyTurno = Turno & { myKidIds: string[] }
+
+export async function updateTurnoSettings(turnoId: string, patch: Partial<Turno>): Promise<void> {
+  const { error } = await db().from('turnos').update(patch).eq('id', turnoId)
+  if (error) throw error
+}
 
 export interface PendingInvite {
   id: string
