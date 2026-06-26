@@ -121,7 +121,7 @@ export function TurnoDetail({
 
           {tab === 'ajustes' && <TurnoAjustes turno={turno} onSaved={onChanged} />}
 
-          {tab === 'ruta' && <TurnoRuta turno={turno} members={members} />}
+          {tab === 'ruta' && <TurnoRuta turno={turno} members={members} myFamilyId={family?.id ?? null} />}
 
           {tab === 'equipo' && (
             <div>

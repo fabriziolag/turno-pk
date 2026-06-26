@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MapContainer, Marker, Polyline, Popup, TileLayer, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import type { RealtimeChannel } from '@supabase/supabase-js'
+import { supabase } from '../../lib/supabase'
+import { Button } from '../../components/ui'
 import { useToast } from '../../components/toastStore'
 import { addDays, capitalize, dateKey, dayCode, isWeekday, prettyDate, startOfWeek, weekKey } from '../../lib/dates'
 import { famColor } from '../../lib/format'
@@ -10,6 +13,7 @@ import { emptyDoc, loadTurnoDoc, saveTurnoDoc, type TurnoDoc } from '../../lib/t
 import type { MyTurno, TurnoMemberView } from '../../lib/turnos'
 
 const SANTIAGO = { lat: -33.45, lng: -70.66 }
+const GEOFENCE_KM = 0.05 // 50 m
 
 function numberIcon(n: number, color: string, done: boolean) {
   return L.divIcon({
@@ -19,13 +23,19 @@ function numberIcon(n: number, color: string, done: boolean) {
     iconAnchor: [14, 14],
   })
 }
-function schoolIcon(name: string) {
-  return L.divIcon({
+const schoolIcon = (name: string) =>
+  L.divIcon({
     className: '',
     html: `<div style="background:#15281c;color:#fff;border-radius:8px;padding:3px 7px;font-size:11px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.3);white-space:nowrap">🏫 ${name}</div>`,
     iconSize: [80, 22],
   })
-}
+const vanIcon = L.divIcon({
+  className: '',
+  html: `<div style="font-size:28px;line-height:1;filter:drop-shadow(0 2px 3px rgba(0,0,0,.45))">🚐</div>`,
+  iconSize: [30, 30],
+  iconAnchor: [15, 15],
+})
+
 function FitBounds({ points }: { points: [number, number][] }) {
   const map = useMap()
   const key = JSON.stringify(points)
@@ -37,11 +47,21 @@ function FitBounds({ points }: { points: [number, number][] }) {
   return null
 }
 
-export function TurnoRuta({ turno, members }: { turno: MyTurno; members: TurnoMemberView[] }) {
+export function TurnoRuta({
+  turno,
+  members,
+  myFamilyId,
+}: {
+  turno: MyTurno
+  members: TurnoMemberView[]
+  myFamilyId: string | null
+}) {
   const { toast } = useToast()
   const [doc, setDoc] = useState<TurnoDoc>(emptyDoc())
   const [anchor, setAnchor] = useState(() => new Date())
   const [loading, setLoading] = useState(true)
+  const [sharing, setSharing] = useState(false)
+  const [van, setVan] = useState<{ lat: number; lng: number } | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -74,7 +94,6 @@ export function TurnoRuta({ turno, members }: { turno: MyTurno; members: TurnoMe
 
   const school = turno.school_lat != null && turno.school_lng != null ? { lat: turno.school_lat, lng: turno.school_lng } : null
 
-  // familias con ≥1 hijo que va hoy
   const goingFamilies = useMemo(() => {
     if (!day) return []
     const goingKids = day.kids.filter((k) => (confirm?.kids[k] ?? 'go') === 'go')
@@ -91,7 +110,6 @@ export function TurnoRuta({ turno, members }: { turno: MyTurno; members: TurnoMe
     return [...famIds].map((fid) => ({ m: memberById.get(fid)!, kidNames: kidsByFam.get(fid) ?? [] })).filter((x) => x.m)
   }, [day, confirm, kidFamily, memberById])
 
-  // orden: vecino más cercano desde el colegio, conductor último
   const order = useMemo(() => {
     const start = school ?? SANTIAGO
     const withGeo = goingFamilies.filter((g) => g.m.address?.lat != null && g.m.address?.lng != null)
@@ -123,23 +141,93 @@ export function TurnoRuta({ turno, members }: { turno: MyTurno; members: TurnoMe
     return pts
   }, [order, school])
 
-  async function persist(next: TurnoDoc) {
-    setDoc(next)
-    try {
-      await saveTurnoDoc(turno.id, next)
-    } catch {
-      toast('No se pudo guardar', 'warn')
+  const deliver = useCallback(
+    (fid: string, silent = false) => {
+      setDoc((cur) => {
+        if (cur.routeState[dk]?.done[fid]) return cur
+        const next = structuredClone(cur)
+        next.routeState[dk] = next.routeState[dk] ?? { done: {} }
+        next.routeState[dk].done[fid] = true
+        void saveTurnoDoc(turno.id, next).catch(() => {})
+        return next
+      })
+      if (!silent) toast('Entregado ✓', 'ok')
+    },
+    [dk, turno.id, toast],
+  )
+
+  // ---- Realtime Broadcast: posición del furgón en vivo ----
+  const channelRef = useRef<RealtimeChannel | null>(null)
+  useEffect(() => {
+    if (!supabase) return
+    const ch = supabase.channel(`pos-${turno.id}`, { config: { broadcast: { self: false } } })
+    ch.on('broadcast', { event: 'pos' }, ({ payload }) => {
+      const p = payload as { lat: number; lng: number }
+      if (typeof p?.lat === 'number') setVan({ lat: p.lat, lng: p.lng })
+    }).subscribe()
+    channelRef.current = ch
+    return () => {
+      void supabase?.removeChannel(ch)
+      channelRef.current = null
+    }
+  }, [turno.id])
+
+  // ---- Sondeo del doc para ver entregas en vivo (solo si NO estoy compartiendo) ----
+  useEffect(() => {
+    if (sharing) return
+    const t = setInterval(() => { void loadTurnoDoc(turno.id).then(setDoc) }, 6000)
+    return () => clearInterval(t)
+  }, [sharing, turno.id])
+
+  // ---- Geocerca: el conductor auto-marca entregado al acercarse ----
+  const geofenceRef = useRef<(pos: { lat: number; lng: number }) => void>(() => {})
+  geofenceRef.current = (pos) => {
+    if (myFamilyId == null || driverId !== myFamilyId) return // solo el conductor
+    for (const g of order) {
+      const a = g.m.address
+      if (a?.lat == null || a?.lng == null) continue
+      if (done[g.m.family_id]) continue
+      if (haversine(pos, { lat: a.lat, lng: a.lng }) <= GEOFENCE_KM) {
+        deliver(g.m.family_id, true)
+        toast(`📍 Llegaste a ${g.m.fam_name} — entregado ✓`, 'ok')
+      }
     }
   }
-  function deliver(fid: string) {
-    const next = structuredClone(doc)
-    next.routeState[dk] = next.routeState[dk] ?? { done: {} }
-    next.routeState[dk].done[fid] = !next.routeState[dk].done[fid]
-    void persist(next)
+
+  // ---- Compartir mi ubicación ----
+  const watchRef = useRef<number | null>(null)
+  function toggleShare() {
+    if (sharing) {
+      if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current)
+      watchRef.current = null
+      setSharing(false)
+      return
+    }
+    if (!navigator.geolocation) {
+      toast('Tu dispositivo no permite ubicación', 'warn')
+      return
+    }
+    watchRef.current = navigator.geolocation.watchPosition(
+      (p) => {
+        const pos = { lat: p.coords.latitude, lng: p.coords.longitude }
+        setVan(pos)
+        channelRef.current?.send({ type: 'broadcast', event: 'pos', payload: pos })
+        geofenceRef.current(pos)
+      },
+      () => toast('No se pudo obtener tu ubicación (permiso denegado)', 'warn'),
+      { enableHighAccuracy: true, maximumAge: 5000 },
+    )
+    setSharing(true)
   }
+  useEffect(() => {
+    return () => {
+      if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current)
+    }
+  }, [])
 
   const label = dateKey(anchor) === dateKey(new Date()) ? 'Hoy' : capitalize(prettyDate(anchor))
   const noGeoFams = order.filter((g) => !(g.m.address?.lat != null))
+  const iAmDriver = myFamilyId != null && driverId === myFamilyId
 
   return (
     <div>
@@ -169,6 +257,23 @@ export function TurnoRuta({ turno, members }: { turno: MyTurno; members: TurnoMe
         </div>
       ) : (
         <div className="mt-3 space-y-3">
+          {/* Furgón en vivo */}
+          <div className={`flex items-center gap-3 rounded-2xl border p-3 ${sharing ? 'border-leaf bg-leaf/10' : 'border-line bg-white'}`}>
+            <div className="flex-1 text-[13px]">
+              <div className="font-semibold text-ink">🛰️ Furgón en vivo</div>
+              <div className="text-[11.5px] text-ink-soft">
+                {sharing
+                  ? 'Compartiendo tu ubicación. Mantén la app abierta mientras conduces.'
+                  : iAmDriver
+                    ? 'Eres el conductor de hoy: comparte tu ubicación para que las familias te sigan y se marque entregado solo al llegar.'
+                    : 'El conductor puede compartir su ubicación; aquí verás el furgón moverse en vivo.'}
+              </div>
+            </div>
+            <Button variant={sharing ? 'danger' : 'primary'} sm onClick={toggleShare}>
+              {sharing ? 'Detener' : 'Compartir'}
+            </Button>
+          </div>
+
           {noGeoFams.length > 0 && (
             <div className="rounded-xl border border-gold bg-[#fbf3da] px-3 py-2 text-[12px] text-[#6b551d]">
               <b>{noGeoFams.map((g) => g.m.fam_name).join(', ')}</b> sin ubicación — no {noGeoFams.length === 1 ? 'aparece' : 'aparecen'} en el mapa. Pon su dirección en <b>Mi familia</b>.
@@ -195,13 +300,13 @@ export function TurnoRuta({ turno, members }: { turno: MyTurno; members: TurnoMe
                     </Marker>
                   )
                 })}
+                {van && <Marker position={[van.lat, van.lng]} icon={vanIcon} />}
                 {points.length > 1 && <Polyline positions={points} pathOptions={{ color: '#2f6d4a', weight: 4, opacity: 0.6, dashArray: '2,8' }} />}
                 <FitBounds points={points} />
               </MapContainer>
             </div>
           )}
 
-          {/* Lista de paradas */}
           <div className="overflow-hidden rounded-2xl border border-line bg-white">
             {order.map((g, i) => {
               const a = g.m.address
@@ -213,16 +318,12 @@ export function TurnoRuta({ turno, members }: { turno: MyTurno; members: TurnoMe
                     {i + 1}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm font-semibold text-ink">
-                      Familia {g.m.fam_name} {isDrv ? '🚐' : ''}
-                    </div>
+                    <div className="text-sm font-semibold text-ink">Familia {g.m.fam_name} {isDrv ? '🚐' : ''}</div>
                     <div className="truncate text-[11.5px] text-ink-soft">
                       {g.kidNames.join(', ')} · {a?.text || (a?.lat != null ? '' : '⚠ sin ubicación')}
                     </div>
                   </div>
-                  <button className="grid size-9 flex-none place-items-center rounded-[10px] bg-[#e6f7ee] text-[#1faa52]" title="Marcar entregado" onClick={() => deliver(g.m.family_id)}>
-                    ✓
-                  </button>
+                  <button className="grid size-9 flex-none place-items-center rounded-[10px] bg-[#e6f7ee] text-[#1faa52]" title="Marcar entregado" onClick={() => deliver(g.m.family_id)}>✓</button>
                   <button
                     className="grid size-9 flex-none place-items-center rounded-[10px] bg-[#33ccff] text-[#053] disabled:opacity-40"
                     title="Navegar con Waze"
@@ -235,7 +336,7 @@ export function TurnoRuta({ turno, members }: { turno: MyTurno; members: TurnoMe
               )
             })}
           </div>
-          <p className="text-[11px] text-ink-soft">El orden minimiza el recorrido; el conductor queda al final. ✓ marca entregado, ▸ abre Waze.</p>
+          <p className="text-[11px] text-ink-soft">El orden minimiza el recorrido; el conductor queda al final. Con "Compartir" el furgón se ve en vivo y al llegar a ~50 m de cada casa se marca entregado solo.</p>
         </div>
       )}
     </div>
