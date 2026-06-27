@@ -59,12 +59,30 @@ export async function isPushOn(): Promise<boolean> {
   }
 }
 
-/** Notifica a una familia (vía Edge Function). No falla la UI si algo sale mal. */
-export async function notifyFamily(familyId: string, title: string, body: string, url = '/'): Promise<void> {
-  if (!supabase) return
+/** Notifica a una familia (vía Edge Function). Devuelve un diagnóstico legible. */
+export async function notifyFamily(
+  familyId: string,
+  title: string,
+  body: string,
+  url = '/',
+): Promise<{ ok: boolean; info: string }> {
+  if (!supabase) return { ok: false, info: 'sin Supabase' }
   try {
-    await supabase.functions.invoke('bright-endpoint', { body: { familyId, title, body, url } })
-  } catch {
-    /* silencioso */
+    const { data, error } = await supabase.functions.invoke('bright-endpoint', {
+      body: { familyId, title, body, url },
+    })
+    if (error) {
+      let detail = error.message ?? 'error función'
+      try {
+        const ctx = (error as { context?: { json?: () => Promise<unknown> } }).context
+        if (ctx?.json) detail = JSON.stringify(await ctx.json())
+      } catch {
+        /* sin cuerpo */
+      }
+      return { ok: false, info: detail }
+    }
+    return { ok: true, info: typeof data === 'object' ? JSON.stringify(data) : String(data) }
+  } catch (e) {
+    return { ok: false, info: e instanceof Error ? e.message : 'error' }
   }
 }

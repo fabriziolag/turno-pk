@@ -99,8 +99,8 @@ export function MiFamilia({
 
   async function probarAviso() {
     if (!family) return
-    await notifyFamily(family.id, 'Turno PK 🚐', 'Notificación de prueba ✓')
-    toast('Aviso de prueba enviado — revisa tu teléfono', 'ok')
+    const r = await notifyFamily(family.id, 'Turno PK 🚐', 'Notificación de prueba ✓')
+    toast(r.ok ? `Función respondió: ${r.info}` : `Error: ${r.info}`, r.ok ? 'ok' : 'warn')
   }
 
   async function run(fn: () => Promise<void>, ok: string) {
