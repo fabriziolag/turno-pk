@@ -17,7 +17,7 @@ export function Button({ variant = 'ghost', sm, className = '', ...props }: Butt
   return (
     <button
       {...props}
-      className={`inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition disabled:cursor-not-allowed disabled:opacity-45 ${
+      className={`inline-flex select-none items-center justify-center gap-2 rounded-xl font-semibold transition [touch-action:manipulation] active:scale-[.97] active:brightness-95 disabled:cursor-not-allowed disabled:opacity-45 ${
         sm ? 'px-3 py-2 text-xs' : 'px-4 py-2.5 text-sm'
       } ${VARIANTS[variant]} ${className}`}
     />
