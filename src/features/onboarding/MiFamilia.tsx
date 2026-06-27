@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Button } from '../../components/ui'
 import { Collapsible } from '../../components/Collapsible'
 import { PhotoButton } from '../../components/PhotoButton'
 import { useToast } from '../../components/toastStore'
 import { REGIONES } from '../../lib/regiones'
 import { geocode, parseCoords } from '../../lib/geocode'
+import { enablePush, isPushOn, pushSupported } from '../../lib/push'
 import {
   addAddress,
   addContact,
@@ -76,6 +77,25 @@ export function MiFamilia({
   const [coEmail, setCoEmail] = useState('')
   const [addingAddr, setAddingAddr] = useState(false)
   const [addingContact, setAddingContact] = useState(false)
+  const [pushOn, setPushOn] = useState(false)
+  const [pushBusy, setPushBusy] = useState(false)
+
+  useEffect(() => {
+    void isPushOn().then(setPushOn)
+  }, [])
+
+  async function activarAvisos() {
+    setPushBusy(true)
+    const r = await enablePush(profile.id)
+    setPushBusy(false)
+    if (r === 'ok') {
+      setPushOn(true)
+      toast('Avisos activados ✓', 'ok')
+    } else if (r === 'denied') toast('Permiso de notificaciones rechazado', 'warn')
+    else if (r === 'unsupported') toast('Tu dispositivo no soporta avisos (en iPhone, instala la app primero)', 'warn')
+    else if (r === 'noconfig') toast('Faltan las llaves VAPID en el sitio', 'warn')
+    else toast('No se pudo activar', 'warn')
+  }
 
   async function run(fn: () => Promise<void>, ok: string) {
     try {
@@ -112,6 +132,27 @@ export function MiFamilia({
         <button className="text-sm font-semibold text-emerald-200/80 hover:text-white" onClick={onBack}>
           ‹ Volver
         </button>
+
+        {/* AVISOS (push) */}
+        {pushSupported() && (
+          <div className={sectionCls}>
+            <div className="flex items-center gap-3">
+              <div className="flex-1">
+                <div className={headCls} style={{ marginBottom: 2 }}>🔔 Avisos en el teléfono</div>
+                <div className="text-[11.5px] text-ink-soft">
+                  {pushOn
+                    ? 'Activados ✓ — te avisaremos cuando entreguen a tu hijo/a y novedades del turno.'
+                    : 'Recibe un aviso cuando entreguen a tu hijo/a, aunque no tengas la app abierta. En iPhone, instala la app primero.'}
+                </div>
+              </div>
+              {!pushOn && (
+                <Button variant="primary" sm onClick={activarAvisos} disabled={pushBusy}>
+                  {pushBusy ? '…' : 'Activar'}
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* MIS DATOS */}
         <div className={sectionCls}>

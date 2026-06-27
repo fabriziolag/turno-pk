@@ -9,6 +9,7 @@ import { useToast } from '../../components/toastStore'
 import { addDays, capitalize, dateKey, dayCode, isWeekday, prettyDate, startOfWeek, weekKey } from '../../lib/dates'
 import { famColor } from '../../lib/format'
 import { haversine } from '../../lib/geo'
+import { notifyFamily } from '../../lib/push'
 import { emptyDoc, loadTurnoDoc, saveTurnoDoc, type TurnoDoc } from '../../lib/turnodoc'
 import type { MyTurno, TurnoMemberView } from '../../lib/turnos'
 
@@ -143,17 +144,24 @@ export function TurnoRuta({
 
   const deliver = useCallback(
     (fid: string, silent = false) => {
+      let already = false
       setDoc((cur) => {
-        if (cur.routeState[dk]?.done[fid]) return cur
+        if (cur.routeState[dk]?.done[fid]) {
+          already = true
+          return cur
+        }
         const next = structuredClone(cur)
         next.routeState[dk] = next.routeState[dk] ?? { done: {} }
         next.routeState[dk].done[fid] = true
         void saveTurnoDoc(turno.id, next).catch(() => {})
         return next
       })
+      if (already) return
+      const fam = memberById.get(fid)
+      if (fam) void notifyFamily(fid, 'Turno PK 🚐', `${fam.fam_name}: tu hijo/a llegó a casa ✓`)
       if (!silent) toast('Entregado ✓', 'ok')
     },
-    [dk, turno.id, toast],
+    [dk, turno.id, toast, memberById],
   )
 
   // ---- Realtime Broadcast: posición del furgón en vivo ----

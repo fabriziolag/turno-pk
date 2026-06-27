@@ -11,7 +11,11 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
+      includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'push-sw.js'],
+      workbox: {
+        // inyecta el manejo de notificaciones push al SW generado
+        importScripts: ['push-sw.js'],
+      },
       manifest: {
         name: 'Turno PK · Furgón compartido',
         short_name: 'Turno PK',
