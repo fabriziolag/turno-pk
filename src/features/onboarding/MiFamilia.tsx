@@ -5,7 +5,7 @@ import { PhotoButton } from '../../components/PhotoButton'
 import { useToast } from '../../components/toastStore'
 import { REGIONES } from '../../lib/regiones'
 import { geocode, parseCoords } from '../../lib/geocode'
-import { enablePush, isPushOn, pushSupported } from '../../lib/push'
+import { enablePush, isPushOn, notifyFamily, pushSupported } from '../../lib/push'
 import {
   addAddress,
   addContact,
@@ -97,6 +97,12 @@ export function MiFamilia({
     else toast('No se pudo activar', 'warn')
   }
 
+  async function probarAviso() {
+    if (!family) return
+    await notifyFamily(family.id, 'Turno PK 🚐', 'Notificación de prueba ✓')
+    toast('Aviso de prueba enviado — revisa tu teléfono', 'ok')
+  }
+
   async function run(fn: () => Promise<void>, ok: string) {
     try {
       await fn()
@@ -145,9 +151,13 @@ export function MiFamilia({
                     : 'Recibe un aviso cuando entreguen a tu hijo/a, aunque no tengas la app abierta. En iPhone, instala la app primero.'}
                 </div>
               </div>
-              {!pushOn && (
+              {!pushOn ? (
                 <Button variant="primary" sm onClick={activarAvisos} disabled={pushBusy}>
                   {pushBusy ? '…' : 'Activar'}
+                </Button>
+              ) : (
+                <Button variant="ghost" sm onClick={probarAviso}>
+                  Probar
                 </Button>
               )}
             </div>
