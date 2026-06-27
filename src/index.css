@@ -40,6 +40,11 @@ body {
     radial-gradient(900px 500px at -10% 110%, #1a3f2b 0%, transparent 55%),
     var(--color-bg);
   overflow-x: hidden;
+  /* Respeta el notch / barra de estado en PWA instalada (iPhone) */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
 * {
