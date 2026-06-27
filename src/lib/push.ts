@@ -63,7 +63,7 @@ export async function isPushOn(): Promise<boolean> {
 export async function notifyFamily(familyId: string, title: string, body: string, url = '/'): Promise<void> {
   if (!supabase) return
   try {
-    await supabase.functions.invoke('notify', { body: { familyId, title, body, url } })
+    await supabase.functions.invoke('bright-endpoint', { body: { familyId, title, body, url } })
   } catch {
     /* silencioso */
   }
